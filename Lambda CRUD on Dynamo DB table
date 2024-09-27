@@ -1,0 +1,103 @@
+import json
+import boto3
+from botocore.exceptions import ClientError
+
+# Initialize DynamoDB resource
+dynamodb = boto3.resource('dynamodb')
+table_name = 'YourDynamoDBTableName'  # Replace with your table name
+table = dynamodb.Table(table_name)
+
+def lambda_handler(event, context):
+    operation = event.get('httpMethod')
+    
+    if operation == 'POST':
+        return create_task(event)
+    elif operation == 'GET':
+        return get_task(event)
+    elif operation == 'PUT':
+        return update_task(event)
+    elif operation == 'DELETE':
+        return delete_task(event)
+    else:
+        return {
+            'statusCode': 400,
+            'body': json.dumps('Unsupported operation')
+        }
+
+# CREATE operation
+def create_task(event):
+    try:
+        task_data = json.loads(event['body'])
+        table.put_item(Item=task_data)
+        return {
+            'statusCode': 200,
+            'body': json.dumps('Task created successfully')
+        }
+    except ClientError as e:
+        return error_response(e)
+
+# READ operation
+def get_task(event):
+    try:
+        task_id = event['pathParameters']['taskId']  # Get task ID from the URL path
+        response = table.get_item(Key={'taskId': task_id})
+        if 'Item' in response:
+            return {
+                'statusCode': 200,
+                'body': json.dumps(response['Item'])
+            }
+        else:
+            return {
+                'statusCode': 404,
+                'body': json.dumps('Task not found')
+            }
+    except ClientError as e:
+        return error_response(e)
+
+# UPDATE operation
+def update_task(event):
+    try:
+        task_id = event['pathParameters']['taskId']
+        task_data = json.loads(event['body'])
+        
+        # Update the task with new data
+        update_expression = "SET #desc = :desc, status = :status"
+        expression_values = {
+            ':desc': task_data['description'],
+            ':status': task_data['status']
+        }
+        expression_names = {'#desc': 'description'}
+
+        response = table.update_item(
+            Key={'taskId': task_id},
+            UpdateExpression=update_expression,
+            ExpressionAttributeValues=expression_values,
+            ExpressionAttributeNames=expression_names,
+            ReturnValues="UPDATED_NEW"
+        )
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps(response['Attributes'])
+        }
+    except ClientError as e:
+        return error_response(e)
+
+# DELETE operation
+def delete_task(event):
+    try:
+        task_id = event['pathParameters']['taskId']
+        table.delete_item(Key={'taskId': task_id})
+        return {
+            'statusCode': 200,
+            'body': json.dumps('Task deleted successfully')
+        }
+    except ClientError as e:
+        return error_response(e)
+
+# Helper function to handle errors
+def error_response(e):
+    return {
+        'statusCode': 500,
+        'body': json.dumps(f"Error: {e.response['Error']['Message']}")
+    }
